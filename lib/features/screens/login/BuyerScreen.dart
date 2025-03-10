@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart'; // Import for date formatting
+import 'package:intl/intl.dart';
 
 class BuyerScreen extends StatefulWidget {
   const BuyerScreen({super.key});
@@ -12,44 +12,24 @@ class BuyerScreen extends StatefulWidget {
 }
 
 class _BuyerScreenState extends State<BuyerScreen> {
-  String buyerId = '';
-  String sellerId = '';
+  String merchantId = '';
 
   @override
   void initState() {
     super.initState();
-    _fetchBuyerInfo();
-    _fetchSellerId();
+    _fetchMerchantInfo();
   }
 
-  Future<void> _fetchBuyerInfo() async {
+  Future<void> _fetchMerchantInfo() async {
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
-      setState(() => buyerId = user.uid);
-      DocumentSnapshot userDoc =
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+      setState(() => merchantId = user.uid);
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
       if (userDoc.exists) {
         setState(() {
-          buyerId = userDoc['unique_id'] ?? 'N/A';
+          merchantId = userDoc['unique_id'] ?? 'N/A';
         });
       }
-    }
-  }
-
-  Future<void> _fetchSellerId() async {
-    try {
-      sellerId = (await FirebaseFirestore.instance
-          .collection('buyer_notifications')
-          .get())
-          .docs.isNotEmpty
-          ? (await FirebaseFirestore.instance
-          .collection('buyer_notifications')
-          .get())
-          .docs.first['sellerId']
-          : 'Not found';
-    } catch (e) {
-      print('Error fetching seller ID: $e');
-      sellerId = 'Not Found';
     }
   }
 
@@ -58,8 +38,8 @@ class _BuyerScreenState extends State<BuyerScreen> {
       final data = notification.data() as Map<String, dynamic>;
       final transactionData = {
         'product': data['product'],
-        'buyerId': buyerId,
-        'sellerId': sellerId,
+        'buyerId': data['buyerId'],
+        'sellerId': data['sellerId'],
         'quantity': data['quantity'],
         'price': data['price'],
         'status': 'accepted',
@@ -68,11 +48,7 @@ class _BuyerScreenState extends State<BuyerScreen> {
       };
 
       await FirebaseFirestore.instance.collection('transactions').add(transactionData);
-
-      await FirebaseFirestore.instance
-          .collection('buyer_notifications')
-          .doc(notification.id)
-          .delete();
+      await FirebaseFirestore.instance.collection('buyer_notifications').doc(notification.id).delete();
 
       Get.snackbar('Request Accepted', 'You have accepted the seller’s request. 🎉🎉',
           snackPosition: SnackPosition.BOTTOM,
@@ -88,10 +64,7 @@ class _BuyerScreenState extends State<BuyerScreen> {
 
   Future<void> rejectRequest(DocumentSnapshot notification) async {
     try {
-      await FirebaseFirestore.instance
-          .collection('buyer_notifications')
-          .doc(notification.id)
-          .delete();
+      await FirebaseFirestore.instance.collection('buyer_notifications').doc(notification.id).delete();
 
       Get.snackbar('Request Rejected', 'You have rejected the seller’s request. ❌❌',
           snackPosition: SnackPosition.BOTTOM,
@@ -117,7 +90,10 @@ class _BuyerScreenState extends State<BuyerScreen> {
         child: StreamBuilder<QuerySnapshot>(
           stream: FirebaseFirestore.instance
               .collection('buyer_notifications')
-              .orderBy('timestamp', descending: true)
+              .where(Filter.or(
+            Filter('buyerId', isEqualTo: merchantId),
+            Filter('sellerId', isEqualTo: merchantId),
+          ))
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -169,7 +145,7 @@ class _BuyerScreenState extends State<BuyerScreen> {
                           tooltip: 'Accept Request',
                         ),
                         IconButton(
-                          icon: const Icon (Icons.close, color: Colors.red),
+                          icon: const Icon(Icons.close, color: Colors.red),
                           onPressed: () => rejectRequest(doc),
                           tooltip: 'Reject Request',
                         ),
